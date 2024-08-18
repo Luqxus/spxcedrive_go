@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -38,6 +39,8 @@ func (fs *FsWatcher) Watch() error {
 		for {
 			select {
 			case event, ok := <-fs.watcher.Events:
+
+				fmt.Println(event.String())
 				if !ok {
 					return
 				}
@@ -49,22 +52,13 @@ func (fs *FsWatcher) Watch() error {
 
 				f, err := os.Open(event.Name)
 				if err != nil {
-					log.Println(err)
+					fs.deleteFile(event.Name)
 					continue
 				}
 
-				h, err := fs.hasher.Hash(f)
-				if err != nil {
+				if err := fs.updateFile(f, event.Name); err != nil {
 					log.Println(err)
-					continue
 				}
-
-				// transform path file & add to file hash tree
-				path := fs.PathTransformFunc(event.Name)
-				fs.HashTree.Add(path, hex.EncodeToString(h))
-				fmt.Printf("File sum : %s", hex.EncodeToString(h[:]))
-
-				fmt.Printf("Hash Tree : %+v\n", fs.HashTree.tree)
 
 			case err, ok := <-fs.watcher.Errors:
 				if !ok {
@@ -81,6 +75,32 @@ func (fs *FsWatcher) Watch() error {
 	}
 
 	<-make(chan struct{})
+
+	return nil
+}
+
+func (fs *FsWatcher) deleteFile(path string) {
+	key := fs.PathTransformFunc(path)
+	if err := fs.HashTree.Remove(key); err != nil {
+		fmt.Printf("failed to delete file with error : %s", err.Error())
+		return
+	}
+
+	fmt.Printf("file (%s) deleted.\n", path)
+}
+
+func (fs *FsWatcher) updateFile(f io.Reader, path string) error {
+	h, err := fs.hasher.Hash(f)
+	if err != nil {
+		return nil
+	}
+
+	// transform path file & add to file hash tree
+	key := fs.PathTransformFunc(path)
+	fs.HashTree.Add(key, hex.EncodeToString(h))
+	fmt.Printf("File sum : %s", hex.EncodeToString(h[:]))
+
+	fmt.Printf("Hash Tree : %+v\n", fs.HashTree.tree)
 
 	return nil
 }
