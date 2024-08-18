@@ -10,9 +10,11 @@ import (
 )
 
 type FsWatcher struct {
-	dir     string
-	watcher *fsnotify.Watcher
-	hasher  Hasher
+	dir               string
+	watcher           *fsnotify.Watcher
+	hasher            Hasher
+	PathTransformFunc PathTransformFunc
+	HashTree          *FileHashTree
 }
 
 func NewWatcher(dir string) (*FsWatcher, error) {
@@ -21,9 +23,11 @@ func NewWatcher(dir string) (*FsWatcher, error) {
 		return nil, err
 	}
 	return &FsWatcher{
-		dir:     dir,
-		watcher: w,
-		hasher:  &DefaultHasher{},
+		dir:               dir,
+		watcher:           w,
+		hasher:            &DefaultHasher{},
+		PathTransformFunc: DefaultPathTransformFunc,
+		HashTree:          &FileHashTree{tree: make(map[string]string)},
 	}, nil
 }
 
@@ -55,7 +59,12 @@ func (fs *FsWatcher) Watch() error {
 					continue
 				}
 
+				// transform path file & add to file hash tree
+				path := fs.PathTransformFunc(event.Name)
+				fs.HashTree.Add(path, hex.EncodeToString(h))
 				fmt.Printf("File sum : %s", hex.EncodeToString(h[:]))
+
+				fmt.Printf("Hash Tree : %+v\n", fs.HashTree.tree)
 
 			case err, ok := <-fs.watcher.Errors:
 				if !ok {
